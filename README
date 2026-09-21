@@ -1,6 +1,69 @@
-nitro-ng
-========
+Nitro for linux-riscv-security-tool
+===================================
 
-THIS PROJECT IS NO LONGER BEING MAINTAINED, UPDATED, OR SUPPORTED.
+This tree builds a dynamically loadable RISC-V `nitro.ko` for the common IEE
+security-tool interface.
 
-KVM-based virtual machine introspection for malware analysis
+Architecture
+------------
+
+Nitro uses the raw syscall tracepoints and the reserved Nitro security-tool ID:
+
+    RISC-V raw_syscalls tracepoint
+        -> nitro.ko: TGID/TID and syscall filtering
+        -> nitro.ko: pt_regs extraction and no-fault pathname capture
+        -> iee_security_tool_invoke(IEE_SECURITY_TOOL_NITRO_NG, ...)
+        -> nitro.ko IEE callback: fixed-size event ring operation
+
+At load time the module claims its ID with `iee_security_tool_register()`.
+Publish, pop, statistics, and clear operations all enter through that callback.
+The kernel requires `CONFIG_IEE_SECURITY_TOOLS=y`; no Nitro-specific in-tree
+gate opcode is required.
+
+The 256-record ring is module-owned memory so Nitro remains dynamically
+loadable. Ring mutations execute through IEE, but the module's outer mapping is
+not read-only like a built-in `.iee.data` backend would be.
+
+Build for RISC-V
+----------------
+
+Build the target kernel first, then run:
+
+    make KDIR=../linux-riscv-security-tool ARCH=riscv \
+      CROSS_COMPILE=/opt/spacemit-toolchain-linux-glibc-x86_64-v1.2.4/bin/riscv64-unknown-linux-gnu-
+
+The module imports the common IEE and tracepoint symbols. The Makefile uses
+`Module.symvers` when present and falls back to `vmlinux.symvers` for an
+Image-only kernel build.
+
+Load
+----
+
+Capture selected common RISC-V syscalls for one process group:
+
+    insmod nitro.ko target_tgid=1234 syscalls=56,63,64,94,221 capture_paths=1
+
+Capture every process and optionally log records:
+
+    insmod nitro.ko target_tgid=-1 log_events=1
+
+Capture is disabled by default (`target_tgid=0`). `target_pid` can narrow the
+selection to one thread; an empty syscall array selects every syscall.
+
+Interface
+---------
+
+`/dev/nitro` is a root-only binary event stream. Batched `read(2)`, `poll(2)`,
+`NITRO_IOC_GET_STATS`, and `NITRO_IOC_CLEAR` are supported by the ABI in
+`nitro.h`. If the ring is full, the oldest event is replaced and `dropped` is
+incremented.
+
+Security boundary
+-----------------
+
+Ring operations execute inside IEE, while ring storage, tracepoint
+registration, filtering, pathname capture, the device, and module lifecycle
+remain owned by the dynamically loaded module. This validates isolated dispatch
+and centralizes ring mutation, but does not make module data read-only to the
+outer kernel. Strong retained-record protection still requires a built-in
+protected storage backend.

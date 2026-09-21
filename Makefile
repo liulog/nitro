@@ -1,27 +1,25 @@
-CC = gcc
+ifneq ($(KERNELRELEASE),)
 
-TARGET = nitro
-LIBTARGET = libnitro
-CFLAGS = -g -Wall
-DEPS = libnitro.h
-LIBOBJ = libnitro.o
-OBJ = nitro_main.o $(LIBOBJ)
+obj-m += nitro.o
+nitro-y := nitro_kmod.o
 
-.PHONY: default all clean
+else
 
-default: $(TARGET) $(LIBTARGET)
-all: default
+KDIR ?= $(abspath $(CURDIR)/../linux-riscv-security-tool)
+ARCH ?= riscv
+CROSS_COMPILE ?= /opt/spacemit-toolchain-linux-glibc-x86_64-v1.2.4/bin/riscv64-unknown-linux-gnu-
+VMLINUX_SYMVERS ?= $(KDIR)/vmlinux.symvers
+SYMVERS_ARG := $(if $(wildcard $(KDIR)/Module.symvers),,KBUILD_EXTRA_SYMBOLS=$(VMLINUX_SYMVERS))
 
-%.o: %.c $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS)
+.PHONY: all clean
 
-$(TARGET): $(OBJ)
-	gcc -o $@ $^ $(CFLAGS)
-
-$(LIBTARGET): 
-	ar -cvq $(LIBTARGET).a $(LIBOBJ)
+all:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		$(SYMVERS_ARG) modules
 
 clean:
-	-rm -f *.o
-	-rm -f $(TARGET)
-	-rm -f $(LIBTARGET).a
+	$(MAKE) -C $(KDIR) M=$(CURDIR) ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) clean
+
+endif

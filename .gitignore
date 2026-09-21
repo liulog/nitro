@@ -23,5 +23,12 @@
 #target
 nitro
 
+# Linux external-module build metadata
+.*.cmd
+Module.symvers
+modules.order
+*.mod
+*.mod.c
+
 #KDevelop files
 *.kdev4
